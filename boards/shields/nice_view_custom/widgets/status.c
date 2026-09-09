@@ -29,7 +29,6 @@ struct output_status_state {
     bool connected;
     bool bonded;
 };
-
 struct layer_status_state { uint8_t index; };
 struct wpm_status_state { uint8_t wpm; };
 
@@ -72,8 +71,8 @@ static void text(lv_obj_t *canvas, int x, int y, int w, const char *s,
 static void draw_top(lv_obj_t *widget, lv_color_t cbuf[], const struct status_state *state) {
     lv_obj_t *canvas = lv_obj_get_child(widget, 0);
     fill(canvas, LVGL_BACKGROUND);
-
     bool critical = state->battery < 20;
+
     if (critical) {
         box(canvas, 0, 0, 68, 15, true);
         text(canvas, 2, 1, 64, "WARNING", &lv_font_montserrat_14, LV_TEXT_ALIGN_CENTER, true);
@@ -88,9 +87,8 @@ static void draw_top(lv_obj_t *widget, lv_color_t cbuf[], const struct status_st
     text(canvas, 2, 18, 64, critical ? "POWER LOW" : pwr, &lv_font_unscii_8,
          LV_TEXT_ALIGN_LEFT, false);
 
-    int segments = 8;
-    int lit = (state->battery * segments + 99) / 100;
-    for (int i = 0; i < segments; i++) {
+    int lit = (state->battery * 8 + 99) / 100;
+    for (int i = 0; i < 8; i++) {
         box(canvas, 2 + i * 8, 29, 6, 6, i < lit);
     }
 
@@ -98,7 +96,6 @@ static void draw_top(lv_obj_t *widget, lv_color_t cbuf[], const struct status_st
     char sync[16];
     snprintf(sync, sizeof(sync), "%03u WPM", state->wpm);
     text(canvas, 2, 49, 64, sync, &lv_font_montserrat_14, LV_TEXT_ALIGN_LEFT, false);
-
     rotate_canvas(canvas, cbuf);
 }
 
@@ -107,21 +104,22 @@ static void draw_middle(lv_obj_t *widget, lv_color_t cbuf[], const struct status
     fill(canvas, LVGL_BACKGROUND);
 
     text(canvas, 2, 0, 64, "MAGI LINK", &lv_font_montserrat_14, LV_TEXT_ALIGN_CENTER, false);
-    text(canvas, 2, 15, 64, state->usb_selected ? "UMBILICAL" : (state->connected ? "CONNECTED" : "STANDBY"),
+    text(canvas, 2, 15, 64,
+         state->usb_selected ? "UMBILICAL" : (state->connected ? "CONNECTED" : "STANDBY"),
          &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, false);
 
     for (int i = 0; i < 5; i++) {
-        bool selected = (!state->usb_selected && state->profile_index == i);
+        bool selected = !state->usb_selected && state->profile_index == i;
         int x = 2 + i * 13;
         box(canvas, x, 29, 11, 15, selected);
         char n[2] = {(char)('1' + i), '\0'};
         text(canvas, x, 31, 11, n, &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, selected);
     }
 
-    text(canvas, 2, 49, 64, state->usb_selected ? "EXT POWER" : (state->bonded ? "PILOT LINK" : "UNPAIRED"),
+    text(canvas, 2, 49, 64,
+         state->usb_selected ? "EXT POWER" : (state->bonded ? "PILOT LINK" : "UNPAIRED"),
          &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, false);
     text(canvas, 2, 58, 64, "MEL / BAL / CAS", &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, false);
-
     rotate_canvas(canvas, cbuf);
 }
 
@@ -129,14 +127,12 @@ static void draw_bottom(lv_obj_t *widget, lv_color_t cbuf[], const struct status
     lv_obj_t *canvas = lv_obj_get_child(widget, 2);
     fill(canvas, LVGL_BACKGROUND);
 
-    text(canvas, 2, 0, 64, "EVA-01", &lv_font_montserrat_16, LV_TEXT_ALIGN_CENTER, false);
-    text(canvas, 2, 18, 64, "OPERATION MODE", &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, false);
-
-    box(canvas, 5, 31, 58, 20, true);
-    text(canvas, 7, 33, 54, mode_name(state->layer_index), &lv_font_montserrat_14,
+    /* Only roughly 24 pixels of this rotated canvas are visible on the physical
+     * portrait display, so keep the live operation mode inside that strip. */
+    box(canvas, 0, 0, 68, 23, true);
+    text(canvas, 2, 1, 64, "EVA-01", &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, true);
+    text(canvas, 2, 8, 64, mode_name(state->layer_index), &lv_font_montserrat_14,
          LV_TEXT_ALIGN_CENTER, true);
-
-    text(canvas, 2, 55, 64, "NERV // TOKYO-3", &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, false);
     rotate_canvas(canvas, cbuf);
 }
 

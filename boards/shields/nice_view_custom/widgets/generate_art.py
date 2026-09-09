@@ -28,23 +28,22 @@ def set_pixel(raw, frame_idx, x, y, value):
 
 
 def strip_source_frame_labels(raw):
-    """Remove residual source-sheet frame numbers from WARNING frames.
+    """Remove the 25..32 sheet labels without altering the actual artwork.
 
-    In the original portrait 68x140 source frames the remaining labels occupy
-    roughly x=0..19, y=130..139. After rotating the frames clockwise for the
-    nice!view payload, that area maps to x=0..9, y=0..19.
+    The labels for the *next* row of the original sprite sheet bleed into the
+    bottom-left margin of portrait frames 17..24 (x=0..17, y=130..139).
+    Those labels therefore appear at the bottom of those animation frames.
+
+    The payload stored here is already rotated clockwise to 140x68 for the
+    nice!view. That portrait patch maps to x=0..9, y=0..17 in the packed
+    payload. It is a white margin on all eight affected frames, so clear only
+    that tiny region to palette index 0 (white) and leave every other pixel
+    unchanged.
     """
-    # Frames 20-23 have a white margin (0 bit = white in the payload).
-    for frame_idx in range(19, 23):
-        for y in range(0, 20):
+    for frame_idx in range(16, 24):  # eva17 .. eva24
+        for y in range(0, 18):
             for x in range(0, 10):
                 set_pixel(raw, frame_idx, x, y, 0)
-
-    # Frame 24 has a black margin (1 bit = black).
-    frame_idx = 23
-    for y in range(0, 20):
-        for x in range(0, 10):
-            set_pixel(raw, frame_idx, x, y, 1)
 
 
 def main():

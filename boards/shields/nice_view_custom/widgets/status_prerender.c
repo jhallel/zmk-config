@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <string.h>
 #include <stdint.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -7,17 +6,17 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 #include <zmk/battery.h>
 #include <zmk/display.h>
-#include <zmk/events/usb_conn_state_changed.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/battery_state_changed.h>
 #include <zmk/events/ble_active_profile_changed.h>
 #include <zmk/events/endpoint_changed.h>
-#include <zmk/events/wpm_state_changed.h>
 #include <zmk/events/layer_state_changed.h>
-#include <zmk/usb.h>
+#include <zmk/events/usb_conn_state_changed.h>
+#include <zmk/events/wpm_state_changed.h>
 #include <zmk/ble.h>
 #include <zmk/endpoints.h>
 #include <zmk/keymap.h>
+#include <zmk/usb.h>
 #include <zmk/wpm.h>
 
 #include "status.h"
@@ -29,7 +28,12 @@ LV_IMG_DECLARE(nerv_bg_3);
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 static uint8_t wpm_history[10];
 
-struct output_status_state { bool usb_selected; uint8_t profile_index; bool connected; bool bonded; };
+struct output_status_state {
+    bool usb_selected;
+    uint8_t profile_index;
+    bool connected;
+    bool bonded;
+};
 struct layer_status_state { uint8_t index; };
 struct wpm_status_state { uint8_t wpm; };
 
@@ -112,41 +116,53 @@ static void profile_fill(lv_obj_t *canvas, int cx, int cy, int n) {
 static void draw_top(lv_obj_t *widget, lv_color_t cbuf[], const struct status_state *state) {
     lv_obj_t *canvas = lv_obj_get_child(widget, 0);
     draw_bg(canvas, &nerv_bg_1);
-    int fill_w = (state->battery * 15) / 100;
-    if (fill_w > 0) solid(canvas, 33, 32, fill_w, 7, LVGL_FOREGROUND);
+
+    int fill_w = (state->battery * 34) / 100;
+    if (fill_w > 0) {
+        solid(canvas, 4, 36, fill_w, 8, LVGL_FOREGROUND);
+    }
+
     char pct[8];
     snprintf(pct, sizeof(pct), "%u%%", state->battery);
-    pixel_text(canvas, 55, 32, pct, false);
+    pixel_text(canvas, 52, 37, pct, false);
+
     const char *link = state->usb_selected ? "USB" : (state->connected ? "ONLINE" : "STBY");
-    pixel_text(canvas, 14, 58, link, false);
+    pixel_text(canvas, 14, 62, link, false);
     rotate_canvas(canvas, cbuf);
 }
 
 static void draw_middle(lv_obj_t *widget, lv_color_t cbuf[], const struct status_state *state) {
     lv_obj_t *canvas = lv_obj_get_child(widget, 1);
     draw_bg(canvas, &nerv_bg_2);
+
     int max = 1;
-    for (int i = 0; i < 10; i++) if (wpm_history[i] > max) max = wpm_history[i];
     for (int i = 0; i < 10; i++) {
-        int h = 2 + (wpm_history[i] * 14) / max;
-        line(canvas, 3 + i * 4, 24, 3 + i * 4, 24 - h, 2);
+        if (wpm_history[i] > max) max = wpm_history[i];
     }
+    for (int i = 0; i < 10; i++) {
+        int h = 2 + (wpm_history[i] * 17) / max;
+        line(canvas, 3 + i * 4, 26, 3 + i * 4, 26 - h, 2);
+    }
+
     char wpm[8];
     snprintf(wpm, sizeof(wpm), "%03u", state->wpm);
-    pixel_text(canvas, 46, 12, wpm, false);
-    pixel_text(canvas, 46, 20, "WPM", false);
+    pixel_text(canvas, 46, 11, wpm, false);
+    pixel_text(canvas, 46, 19, "WPM", false);
+
     if (!state->usb_selected && state->profile_index < 5) {
         static const int centers[5] = {7, 20, 33, 46, 59};
-        profile_fill(canvas, centers[state->profile_index], 46, state->profile_index + 1);
+        profile_fill(canvas, centers[state->profile_index], 49, state->profile_index + 1);
     }
-    pixel_text(canvas, 38, 56, state->usb_selected ? "USB" : (state->bonded ? "ON" : "WAIT"), false);
+
+    pixel_text(canvas, 40, 61,
+               state->usb_selected ? "USB" : (state->bonded ? "ON" : "WAIT"), false);
     rotate_canvas(canvas, cbuf);
 }
 
 static void draw_bottom(lv_obj_t *widget, lv_color_t cbuf[], const struct status_state *state) {
     lv_obj_t *canvas = lv_obj_get_child(widget, 2);
     draw_bg(canvas, &nerv_bg_3);
-    pixel_text(canvas, 31, 13, mode_name(state->layer_index), false);
+    pixel_text(canvas, 34, 15, mode_name(state->layer_index), false);
     rotate_canvas(canvas, cbuf);
 }
 
@@ -176,13 +192,15 @@ static struct battery_status_state battery_status_get_state(const zmk_event_t *e
 #endif
     };
 }
-ZMK_DISPLAY_WIDGET_LISTENER(widget_battery_status, struct battery_status_state, battery_status_update_cb, battery_status_get_state)
+ZMK_DISPLAY_WIDGET_LISTENER(widget_battery_status, struct battery_status_state,
+                            battery_status_update_cb, battery_status_get_state)
 ZMK_SUBSCRIPTION(widget_battery_status, zmk_battery_state_changed);
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
 ZMK_SUBSCRIPTION(widget_battery_status, zmk_usb_conn_state_changed);
 #endif
 
-static void set_output_status(struct zmk_widget_status *widget, const struct output_status_state *state) {
+static void set_output_status(struct zmk_widget_status *widget,
+                              const struct output_status_state *state) {
     widget->state.usb_selected = state->usb_selected;
     widget->state.profile_index = state->profile_index;
     widget->state.connected = state->connected;
@@ -204,7 +222,8 @@ static struct output_status_state output_status_get_state(const zmk_event_t *eh)
         .bonded = !zmk_ble_active_profile_is_open(),
     };
 }
-ZMK_DISPLAY_WIDGET_LISTENER(widget_output_status, struct output_status_state, output_status_update_cb, output_status_get_state)
+ZMK_DISPLAY_WIDGET_LISTENER(widget_output_status, struct output_status_state,
+                            output_status_update_cb, output_status_get_state)
 ZMK_SUBSCRIPTION(widget_output_status, zmk_endpoint_changed);
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
 ZMK_SUBSCRIPTION(widget_output_status, zmk_usb_conn_state_changed);
@@ -225,7 +244,8 @@ static struct layer_status_state layer_status_get_state(const zmk_event_t *eh) {
     ARG_UNUSED(eh);
     return (struct layer_status_state){.index = zmk_keymap_highest_layer_active()};
 }
-ZMK_DISPLAY_WIDGET_LISTENER(widget_layer_status, struct layer_status_state, layer_status_update_cb, layer_status_get_state)
+ZMK_DISPLAY_WIDGET_LISTENER(widget_layer_status, struct layer_status_state,
+                            layer_status_update_cb, layer_status_get_state)
 ZMK_SUBSCRIPTION(widget_layer_status, zmk_layer_state_changed);
 
 static void set_wpm_status(struct zmk_widget_status *widget, struct wpm_status_state state) {
@@ -242,30 +262,37 @@ static struct wpm_status_state wpm_status_get_state(const zmk_event_t *eh) {
     ARG_UNUSED(eh);
     return (struct wpm_status_state){.wpm = zmk_wpm_get_state()};
 }
-ZMK_DISPLAY_WIDGET_LISTENER(widget_wpm_status, struct wpm_status_state, wpm_status_update_cb, wpm_status_get_state)
+ZMK_DISPLAY_WIDGET_LISTENER(widget_wpm_status, struct wpm_status_state,
+                            wpm_status_update_cb, wpm_status_get_state)
 ZMK_SUBSCRIPTION(widget_wpm_status, zmk_wpm_state_changed);
 
 int zmk_widget_status_init(struct zmk_widget_status *widget, lv_obj_t *parent) {
     widget->obj = lv_obj_create(parent);
     lv_obj_set_size(widget->obj, 160, 68);
+
     lv_obj_t *top = lv_canvas_create(widget->obj);
     lv_obj_align(top, LV_ALIGN_TOP_RIGHT, 0, 0);
     lv_canvas_set_buffer(top, widget->cbuf, CANVAS_SIZE, CANVAS_SIZE, LV_IMG_CF_TRUE_COLOR);
+
     lv_obj_t *middle = lv_canvas_create(widget->obj);
     lv_obj_align(middle, LV_ALIGN_TOP_LEFT, 24, 0);
     lv_canvas_set_buffer(middle, widget->cbuf2, CANVAS_SIZE, CANVAS_SIZE, LV_IMG_CF_TRUE_COLOR);
+
     lv_obj_t *bottom = lv_canvas_create(widget->obj);
     lv_obj_align(bottom, LV_ALIGN_TOP_LEFT, -44, 0);
     lv_canvas_set_buffer(bottom, widget->cbuf3, CANVAS_SIZE, CANVAS_SIZE, LV_IMG_CF_TRUE_COLOR);
+
     widget->state.battery = zmk_battery_state_of_charge();
     widget->state.wpm = zmk_wpm_get_state();
     for (int i = 0; i < 10; i++) wpm_history[i] = widget->state.wpm;
     widget->state.layer_index = zmk_keymap_highest_layer_active();
+
     struct zmk_endpoint_instance ep = zmk_endpoints_selected();
     widget->state.usb_selected = ep.transport == ZMK_TRANSPORT_USB;
     widget->state.profile_index = zmk_ble_active_profile_index();
     widget->state.connected = zmk_ble_active_profile_is_connected();
     widget->state.bonded = !zmk_ble_active_profile_is_open();
+
     sys_slist_append(&widgets, &widget->node);
     redraw_all(widget);
     widget_battery_status_init();

@@ -22,6 +22,7 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include "status.h"
 
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
+static uint8_t wpm_history[10];
 
 struct output_status_state {
     bool usb_selected;
@@ -68,34 +69,108 @@ static void text(lv_obj_t *canvas, int x, int y, int w, const char *s,
     lv_canvas_draw_text(canvas, x, y, w, &d, s);
 }
 
+static void line(lv_obj_t *canvas, int x1, int y1, int x2, int y2, int width) {
+    lv_draw_line_dsc_t d;
+    lv_draw_line_dsc_init(&d);
+    d.color = LVGL_FOREGROUND;
+    d.width = width;
+    lv_point_t pts[2] = {{x1, y1}, {x2, y2}};
+    lv_canvas_draw_line(canvas, pts, 2, &d);
+}
+
+static void hazard(lv_obj_t *canvas, int y) {
+    for (int x = 2; x < 68; x += 11) {
+        line(canvas, x, y + 4, x + 6, y, 2);
+    }
+}
+
+static void octagon(lv_obj_t *canvas, int cx, int cy, bool selected) {
+    lv_point_t p[9] = {
+        {cx - 5, cy - 7}, {cx + 5, cy - 7}, {cx + 7, cy - 5},
+        {cx + 7, cy + 5}, {cx + 5, cy + 7}, {cx - 5, cy + 7},
+        {cx - 7, cy + 5}, {cx - 7, cy - 5}, {cx - 5, cy - 7},
+    };
+    if (selected) {
+        box(canvas, cx - 5, cy - 5, 11, 11, true);
+    }
+    lv_draw_line_dsc_t d;
+    lv_draw_line_dsc_init(&d);
+    d.color = LVGL_FOREGROUND;
+    d.width = 1;
+    lv_canvas_draw_line(canvas, p, 9, &d);
+}
+
+static uint8_t micro_row(char c, int row) {
+    static const uint8_t blank[5] = {0,0,0,0,0};
+    const uint8_t *g = blank;
+    static const uint8_t A[5]={2,5,7,5,5}, D[5]={6,5,5,5,6}, E[5]={7,4,6,4,7};
+    static const uint8_t G[5]={3,4,5,5,3}, H[5]={5,5,7,5,5}, I[5]={7,2,2,2,7};
+    static const uint8_t L[5]={4,4,4,4,7}, N[5]={5,7,7,7,5}, O[5]={2,5,5,5,2};
+    static const uint8_t R[5]={6,5,6,5,5}, S[5]={3,4,2,1,6}, T[5]={7,2,2,2,2};
+    static const uint8_t V[5]={5,5,5,5,2}, W[5]={5,5,7,7,5};
+    static const uint8_t AP[5]={2,2,0,0,0}, DOT[5]={0,0,0,0,2};
+    switch (c) {
+    case 'A': g=A; break; case 'D': g=D; break; case 'E': g=E; break;
+    case 'G': g=G; break; case 'H': g=H; break; case 'I': g=I; break;
+    case 'L': g=L; break; case 'N': g=N; break; case 'O': g=O; break;
+    case 'R': g=R; break; case 'S': g=S; break; case 'T': g=T; break;
+    case 'V': g=V; break; case 'W': g=W; break; case '\'': g=AP; break;
+    case '.': g=DOT; break; default: g=blank; break;
+    }
+    return g[row];
+}
+
+static void micro_text(lv_obj_t *canvas, int x, int y, const char *s) {
+    for (int i = 0; s[i] != '\0'; i++) {
+        for (int row = 0; row < 5; row++) {
+            uint8_t bits = micro_row(s[i], row);
+            for (int col = 0; col < 3; col++) {
+                if (bits & (1 << (2 - col))) {
+                    box(canvas, x + i * 4 + col, y + row, 1, 1, true);
+                }
+            }
+        }
+    }
+}
+
 static void draw_top(lv_obj_t *widget, lv_color_t cbuf[], const struct status_state *state) {
     lv_obj_t *canvas = lv_obj_get_child(widget, 0);
     fill(canvas, LVGL_BACKGROUND);
-    bool critical = state->battery < 20;
 
-    if (critical) {
-        box(canvas, 0, 0, 68, 15, true);
-        text(canvas, 2, 1, 64, "WARNING", &lv_font_montserrat_14, LV_TEXT_ALIGN_CENTER, true);
-    } else {
-        text(canvas, 1, 0, 42, "NERV", &lv_font_montserrat_16, LV_TEXT_ALIGN_LEFT, false);
-        text(canvas, 43, 3, 23, state->usb_selected ? "UMB" : "A.T", &lv_font_unscii_8,
-             LV_TEXT_ALIGN_RIGHT, false);
+    hazard(canvas, 0);
+    text(canvas, 1, 4, 66, "NERV", &lv_font_montserrat_16, LV_TEXT_ALIGN_LEFT, false);
+    text(canvas, 1, 22, 66, "INTERNAL POWER", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
+
+    box(canvas, 1, 31, 29, 10, false);
+    box(canvas, 30, 34, 3, 4, true);
+    int fill_w = (state->battery * 25) / 100;
+    if (fill_w > 0) {
+        box(canvas, 3, 33, fill_w, 6, true);
+    }
+    char pct[8];
+    snprintf(pct, sizeof(pct), "%u%%", state->battery);
+    text(canvas, 35, 29, 31, pct, &lv_font_montserrat_14, LV_TEXT_ALIGN_RIGHT, false);
+
+    line(canvas, 1, 43, 66, 43, 1);
+    text(canvas, 1, 45, 31, "A.T. LINK", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
+    text(canvas, 33, 45, 33,
+         state->usb_selected ? "UMBILICAL" : (state->connected ? "CONNECTED" : "STANDBY"),
+         &lv_font_unscii_8, LV_TEXT_ALIGN_RIGHT, false);
+
+    text(canvas, 1, 54, 34, "SYNC RATE", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
+    char sync[8];
+    snprintf(sync, sizeof(sync), "%03u", state->wpm);
+    text(canvas, 39, 52, 27, sync, &lv_font_montserrat_14, LV_TEXT_ALIGN_RIGHT, false);
+
+    int max = 1;
+    for (int i = 0; i < 10; i++) {
+        if (wpm_history[i] > max) max = wpm_history[i];
+    }
+    for (int i = 0; i < 10; i++) {
+        int h = 1 + (wpm_history[i] * 6) / max;
+        line(canvas, 2 + i * 6, 67, 2 + i * 6, 67 - h, 2);
     }
 
-    char pwr[16];
-    snprintf(pwr, sizeof(pwr), "PWR %u%%", state->battery);
-    text(canvas, 2, 18, 64, critical ? "POWER LOW" : pwr, &lv_font_unscii_8,
-         LV_TEXT_ALIGN_LEFT, false);
-
-    int lit = (state->battery * 8 + 99) / 100;
-    for (int i = 0; i < 8; i++) {
-        box(canvas, 2 + i * 8, 29, 6, 6, i < lit);
-    }
-
-    text(canvas, 2, 39, 64, "SYNC RATE", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
-    char sync[16];
-    snprintf(sync, sizeof(sync), "%03u WPM", state->wpm);
-    text(canvas, 2, 49, 64, sync, &lv_font_montserrat_14, LV_TEXT_ALIGN_LEFT, false);
     rotate_canvas(canvas, cbuf);
 }
 
@@ -103,36 +178,41 @@ static void draw_middle(lv_obj_t *widget, lv_color_t cbuf[], const struct status
     lv_obj_t *canvas = lv_obj_get_child(widget, 1);
     fill(canvas, LVGL_BACKGROUND);
 
-    text(canvas, 2, 0, 64, "MAGI LINK", &lv_font_montserrat_14, LV_TEXT_ALIGN_CENTER, false);
-    text(canvas, 2, 15, 64,
-         state->usb_selected ? "UMBILICAL" : (state->connected ? "CONNECTED" : "STANDBY"),
-         &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, false);
+    text(canvas, 1, 0, 66, "MAGI", &lv_font_montserrat_16, LV_TEXT_ALIGN_CENTER, false);
 
+    const int cx[5] = {10, 34, 58, 22, 46};
+    const int cy[5] = {20, 20, 20, 37, 37};
     for (int i = 0; i < 5; i++) {
         bool selected = !state->usb_selected && state->profile_index == i;
-        int x = 2 + i * 13;
-        box(canvas, x, 29, 11, 15, selected);
+        octagon(canvas, cx[i], cy[i], selected);
         char n[2] = {(char)('1' + i), '\0'};
-        text(canvas, x, 31, 11, n, &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, selected);
+        text(canvas, cx[i] - 4, cy[i] - 5, 8, n, &lv_font_unscii_8,
+             LV_TEXT_ALIGN_CENTER, selected);
     }
 
-    text(canvas, 2, 49, 64,
-         state->usb_selected ? "EXT POWER" : (state->bonded ? "PILOT LINK" : "UNPAIRED"),
-         &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, false);
-    text(canvas, 2, 58, 64, "MEL / BAL / CAS", &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, false);
+    text(canvas, 1, 45, 66, "PILOT LINK", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
+    text(canvas, 1, 52, 66,
+         state->usb_selected ? "UMBILICAL" : (state->bonded ? "CONNECTED" : "UNPAIRED"),
+         &lv_font_unscii_8, LV_TEXT_ALIGN_RIGHT, false);
+
+    line(canvas, 1, 59, 66, 59, 1);
+    text(canvas, 1, 60, 26, "EVA-01", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
+    text(canvas, 27, 60, 39, mode_name(state->layer_index),
+         &lv_font_unscii_8, LV_TEXT_ALIGN_RIGHT, false);
+
     rotate_canvas(canvas, cbuf);
 }
 
 static void draw_bottom(lv_obj_t *widget, lv_color_t cbuf[], const struct status_state *state) {
+    ARG_UNUSED(state);
     lv_obj_t *canvas = lv_obj_get_child(widget, 2);
     fill(canvas, LVGL_BACKGROUND);
 
-    /* Only roughly 24 pixels of this rotated canvas are visible on the physical
-     * portrait display, so keep the live operation mode inside that strip. */
-    box(canvas, 0, 0, 68, 23, true);
-    text(canvas, 2, 1, 64, "EVA-01", &lv_font_unscii_8, LV_TEXT_ALIGN_CENTER, true);
-    text(canvas, 2, 8, 64, mode_name(state->layer_index), &lv_font_montserrat_14,
-         LV_TEXT_ALIGN_CENTER, true);
+    hazard(canvas, 0);
+    micro_text(canvas, 8, 6, "GOD'S IN HIS");
+    micro_text(canvas, 6, 12, "HEAVEN. ALL'S");
+    micro_text(canvas, 0, 18, "RIGHT WITH WORLD.");
+
     rotate_canvas(canvas, cbuf);
 }
 
@@ -203,7 +283,7 @@ ZMK_SUBSCRIPTION(widget_output_status, zmk_ble_active_profile_changed);
 
 static void set_layer_status(struct zmk_widget_status *widget, struct layer_status_state state) {
     widget->state.layer_index = state.index;
-    draw_bottom(widget->obj, widget->cbuf3, &widget->state);
+    draw_middle(widget->obj, widget->cbuf2, &widget->state);
 }
 static void layer_status_update_cb(struct layer_status_state state) {
     struct zmk_widget_status *widget;
@@ -218,6 +298,10 @@ ZMK_DISPLAY_WIDGET_LISTENER(widget_layer_status, struct layer_status_state,
 ZMK_SUBSCRIPTION(widget_layer_status, zmk_layer_state_changed);
 
 static void set_wpm_status(struct zmk_widget_status *widget, struct wpm_status_state state) {
+    for (int i = 0; i < 9; i++) {
+        wpm_history[i] = wpm_history[i + 1];
+    }
+    wpm_history[9] = state.wpm;
     widget->state.wpm = state.wpm;
     draw_top(widget->obj, widget->cbuf, &widget->state);
 }
@@ -251,7 +335,9 @@ int zmk_widget_status_init(struct zmk_widget_status *widget, lv_obj_t *parent) {
 
     widget->state.battery = zmk_battery_state_of_charge();
     widget->state.wpm = zmk_wpm_get_state();
+    for (int i = 0; i < 10; i++) wpm_history[i] = widget->state.wpm;
     widget->state.layer_index = zmk_keymap_highest_layer_active();
+
     struct zmk_endpoint_instance ep = zmk_endpoints_selected();
     widget->state.usb_selected = ep.transport == ZMK_TRANSPORT_USB;
     widget->state.profile_index = zmk_ble_active_profile_index();

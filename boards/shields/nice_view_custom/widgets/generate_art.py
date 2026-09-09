@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate 24 LVGL 1-bit Evangelion frames for the nice!view build."""
+"""Generate 32 LVGL 1-bit Evangelion frames for the nice!view build."""
 from pathlib import Path
 import base64
 import sys
@@ -9,7 +9,7 @@ WIDTH = 140
 HEIGHT = 68
 ROW_BYTES = 18
 FRAME_BYTES = ROW_BYTES * HEIGHT
-FRAME_COUNT = 24
+FRAME_COUNT = 32
 
 PAYLOAD = "".join(
     (Path(__file__).with_name(f"eva_payload_{i}.txt").read_text().strip())

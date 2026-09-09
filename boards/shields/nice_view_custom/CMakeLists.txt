@@ -1,7 +1,8 @@
 if(CONFIG_ZMK_DISPLAY AND CONFIG_NICE_VIEW_WIDGET_STATUS)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
   set(EVA_ART_C ${CMAKE_CURRENT_BINARY_DIR}/eva_art.c)
   execute_process(
-    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/widgets/generate_art.py ${EVA_ART_C}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/widgets/generate_art.py ${EVA_ART_C}
     RESULT_VARIABLE EVA_ART_RESULT
   )
   if(NOT EVA_ART_RESULT EQUAL 0)

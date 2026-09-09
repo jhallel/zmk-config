@@ -8,6 +8,11 @@ struct status_state {
     uint8_t battery;
     bool charging;
     bool connected;
+    bool bonded;
+    bool usb_selected;
+    uint8_t profile_index;
+    uint8_t wpm;
+    uint8_t layer_index;
 };
 struct battery_status_state {
     uint8_t level;

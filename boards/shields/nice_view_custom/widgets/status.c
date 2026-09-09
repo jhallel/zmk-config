@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
@@ -49,24 +50,10 @@ static void fill(lv_obj_t *canvas, lv_color_t color) {
     lv_canvas_draw_rect(canvas, 0, 0, CANVAS_SIZE, CANVAS_SIZE, &d);
 }
 
-static void box(lv_obj_t *canvas, int x, int y, int w, int h, bool filled) {
+static void solid(lv_obj_t *canvas, int x, int y, int w, int h, lv_color_t color) {
     lv_draw_rect_dsc_t d;
-    init_rect_dsc(&d, filled ? LVGL_FOREGROUND : LVGL_BACKGROUND);
+    init_rect_dsc(&d, color);
     lv_canvas_draw_rect(canvas, x, y, w, h, &d);
-    if (!filled) {
-        init_rect_dsc(&d, LVGL_FOREGROUND);
-        lv_canvas_draw_rect(canvas, x, y, w, 1, &d);
-        lv_canvas_draw_rect(canvas, x, y + h - 1, w, 1, &d);
-        lv_canvas_draw_rect(canvas, x, y, 1, h, &d);
-        lv_canvas_draw_rect(canvas, x + w - 1, y, 1, h, &d);
-    }
-}
-
-static void text(lv_obj_t *canvas, int x, int y, int w, const char *s,
-                 const lv_font_t *font, lv_text_align_t align, bool invert) {
-    lv_draw_label_dsc_t d;
-    init_label_dsc(&d, invert ? LVGL_BACKGROUND : LVGL_FOREGROUND, font, align);
-    lv_canvas_draw_text(canvas, x, y, w, &d, s);
 }
 
 static void line(lv_obj_t *canvas, int x1, int y1, int x2, int y2, int width) {
@@ -78,59 +65,146 @@ static void line(lv_obj_t *canvas, int x1, int y1, int x2, int y2, int width) {
     lv_canvas_draw_line(canvas, pts, 2, &d);
 }
 
+static uint16_t glyph3x5(char c) {
+    switch (c) {
+    case ' ': return 0x0000;
+    case 'A': return 0x2bed;
+    case 'B': return 0x6bae;
+    case 'C': return 0x3923;
+    case 'D': return 0x6b6e;
+    case 'E': return 0x79a7;
+    case 'F': return 0x79a4;
+    case 'G': return 0x396b;
+    case 'H': return 0x5bed;
+    case 'I': return 0x7497;
+    case 'J': return 0x126a;
+    case 'K': return 0x5bad;
+    case 'L': return 0x4927;
+    case 'M': return 0x5fed;
+    case 'N': return 0x5ffd;
+    case 'O': return 0x2b6a;
+    case 'P': return 0x6ba4;
+    case 'Q': return 0x2b7b;
+    case 'R': return 0x6bad;
+    case 'S': return 0x388e;
+    case 'T': return 0x7492;
+    case 'U': return 0x5b6f;
+    case 'V': return 0x5b6a;
+    case 'W': return 0x5bfd;
+    case 'X': return 0x5aad;
+    case 'Y': return 0x5a92;
+    case 'Z': return 0x72a7;
+    case '0': return 0x7b6f;
+    case '1': return 0x2c97;
+    case '2': return 0x62a7;
+    case '3': return 0x628e;
+    case '4': return 0x5bc9;
+    case '5': return 0x798e;
+    case '6': return 0x39aa;
+    case '7': return 0x7292;
+    case '8': return 0x2aaa;
+    case '9': return 0x2ace;
+    case '.': return 0x0002;
+    case '\'': return 0x2400;
+    case '-': return 0x01c0;
+    case '/': return 0x12a4;
+    case '%': return 0x52a5;
+    case ':': return 0x0410;
+    default: return 0;
+    }
+}
+
+static uint64_t glyph5x7(char c) {
+    switch (c) {
+    case 'M': return 0x4775ac631ULL;
+    case 'A': return 0x11518fe31ULL;
+    case 'G': return 0x3a30bc62eULL;
+    case 'I': return 0x7c842109fULL;
+    default: return 0;
+    }
+}
+
+static void pixel_text_ex(lv_obj_t *canvas, int x, int y, const char *s,
+                          int scale, int advance, bool inverse) {
+    lv_color_t color = inverse ? LVGL_BACKGROUND : LVGL_FOREGROUND;
+    for (int i = 0; s[i] != '\0'; i++) {
+        uint16_t bits = glyph3x5(s[i]);
+        for (int row = 0; row < 5; row++) {
+            for (int col = 0; col < 3; col++) {
+                int bit = 14 - (row * 3 + col);
+                if ((bits >> bit) & 1U) {
+                    solid(canvas, x + col * scale, y + row * scale,
+                          scale, scale, color);
+                }
+            }
+        }
+        x += advance * scale;
+    }
+}
+
+static void pixel_text(lv_obj_t *canvas, int x, int y, const char *s,
+                       int scale, bool inverse) {
+    pixel_text_ex(canvas, x, y, s, scale, 4, inverse);
+}
+
+static void pixel_text5(lv_obj_t *canvas, int x, int y, const char *s) {
+    for (int i = 0; s[i] != '\0'; i++) {
+        uint64_t bits = glyph5x7(s[i]);
+        for (int row = 0; row < 7; row++) {
+            for (int col = 0; col < 5; col++) {
+                int bit = 34 - (row * 5 + col);
+                if ((bits >> bit) & 1ULL) {
+                    solid(canvas, x + col, y + row, 1, 1, LVGL_FOREGROUND);
+                }
+            }
+        }
+        x += 6;
+    }
+}
+
+static const uint8_t nerv_logo_bits[15 * 7] = { 0x1c, 0x1d, 0xff, 0x9f, 0xc3, 0x87, 0x80, 0x1c, 0x1d, 0xff, 0x9f, 0xe7, 0x87, 0x80, 0x1f, 0x1d, 0xff, 0x9f, 0xff, 0x87, 0x80, 0x1f, 0x1d, 0xff, 0x9f, 0xff, 0x87, 0x80, 0x1f, 0x9d, 0xe0, 0x1c, 0x7f, 0x87, 0x80, 0x1f, 0xdd, 0xe0, 0x1c, 0x79, 0xc7, 0x00, 0x1f, 0xdd, 0xff, 0x1f, 0xf1, 0xc7, 0x00, 0x1f, 0xdd, 0xff, 0x1f, 0xf1, 0xcf, 0x00, 0x1d, 0xfd, 0xff, 0x1f, 0xc1, 0xce, 0x00, 0x1c, 0xfd, 0xe0, 0x1d, 0xe0, 0xfe, 0x00, 0x1c, 0xfd, 0xe0, 0x1c, 0xe0, 0xfc, 0x00, 0x1c, 0x7d, 0xe0, 0x1c, 0xf0, 0xfc, 0x00, 0x1c, 0x3d, 0xff, 0x9c, 0xf0, 0x7c, 0x00, 0x1c, 0x3d, 0xff, 0x9c, 0xf8, 0x78, 0x00, 0x1c, 0x1d, 0xff, 0x9c, 0x78, 0x78, 0x00 };
+
+static void draw_nerv_logo(lv_obj_t *canvas, int x0, int y0) {
+    for (int y = 0; y < 15; y++) {
+        for (int x = 0; x < 52; x++) {
+            int byte_index = y * 7 + (x / 8);
+            uint8_t mask = (uint8_t)(1U << (7 - (x % 8)));
+            if (nerv_logo_bits[byte_index] & mask) {
+                solid(canvas, x0 + x, y0 + y, 1, 1, LVGL_FOREGROUND);
+            }
+        }
+    }
+}
+
+static void outline_box(lv_obj_t *canvas, int x, int y, int w, int h) {
+    line(canvas, x, y, x + w - 1, y, 1);
+    line(canvas, x, y + h - 1, x + w - 1, y + h - 1, 1);
+    line(canvas, x, y, x, y + h - 1, 1);
+    line(canvas, x + w - 1, y, x + w - 1, y + h - 1, 1);
+}
+
 static void hazard(lv_obj_t *canvas, int y) {
     for (int x = 2; x < 68; x += 11) {
         line(canvas, x, y + 4, x + 6, y, 2);
     }
 }
 
-static void octagon(lv_obj_t *canvas, int cx, int cy, bool selected) {
-    lv_point_t p[9] = {
-        {cx - 5, cy - 7}, {cx + 5, cy - 7}, {cx + 7, cy - 5},
-        {cx + 7, cy + 5}, {cx + 5, cy + 7}, {cx - 5, cy + 7},
-        {cx - 7, cy + 5}, {cx - 7, cy - 5}, {cx - 5, cy - 7},
-    };
+static void draw_bt_icon(lv_obj_t *canvas) {
+    line(canvas, 5, 55, 5, 65, 1);
+    line(canvas, 5, 55, 11, 60, 1);
+    line(canvas, 5, 65, 11, 60, 1);
+    line(canvas, 5, 55, 1, 60, 1);
+    line(canvas, 5, 65, 1, 60, 1);
+}
+
+static void draw_profile(lv_obj_t *canvas, int x, int y, int n, bool selected) {
     if (selected) {
-        box(canvas, cx - 5, cy - 5, 11, 11, true);
+        solid(canvas, x, y, 11, 11, LVGL_FOREGROUND);
+    } else {
+        outline_box(canvas, x, y, 11, 11);
     }
-    lv_draw_line_dsc_t d;
-    lv_draw_line_dsc_init(&d);
-    d.color = LVGL_FOREGROUND;
-    d.width = 1;
-    lv_canvas_draw_line(canvas, p, 9, &d);
-}
-
-static uint8_t micro_row(char c, int row) {
-    static const uint8_t blank[5] = {0,0,0,0,0};
-    const uint8_t *g = blank;
-    static const uint8_t A[5]={2,5,7,5,5}, D[5]={6,5,5,5,6}, E[5]={7,4,6,4,7};
-    static const uint8_t G[5]={3,4,5,5,3}, H[5]={5,5,7,5,5}, I[5]={7,2,2,2,7};
-    static const uint8_t L[5]={4,4,4,4,7}, N[5]={5,7,7,7,5}, O[5]={2,5,5,5,2};
-    static const uint8_t R[5]={6,5,6,5,5}, S[5]={3,4,2,1,6}, T[5]={7,2,2,2,2};
-    static const uint8_t V[5]={5,5,5,5,2}, W[5]={5,5,7,7,5};
-    static const uint8_t AP[5]={2,2,0,0,0}, DOT[5]={0,0,0,0,2};
-    switch (c) {
-    case 'A': g=A; break; case 'D': g=D; break; case 'E': g=E; break;
-    case 'G': g=G; break; case 'H': g=H; break; case 'I': g=I; break;
-    case 'L': g=L; break; case 'N': g=N; break; case 'O': g=O; break;
-    case 'R': g=R; break; case 'S': g=S; break; case 'T': g=T; break;
-    case 'V': g=V; break; case 'W': g=W; break; case '\'': g=AP; break;
-    case '.': g=DOT; break; default: g=blank; break;
-    }
-    return g[row];
-}
-
-static void micro_text(lv_obj_t *canvas, int x, int y, const char *s) {
-    for (int i = 0; s[i] != '\0'; i++) {
-        for (int row = 0; row < 5; row++) {
-            uint8_t bits = micro_row(s[i], row);
-            for (int col = 0; col < 3; col++) {
-                if (bits & (1 << (2 - col))) {
-                    box(canvas, x + i * 4 + col, y + row, 1, 1, true);
-                }
-            }
-        }
-    }
+    char label[2] = {(char)('0' + n), '\0'};
+    pixel_text(canvas, x + 3, y + 3, label, 1, selected);
 }
 
 static void draw_top(lv_obj_t *widget, lv_color_t cbuf[], const struct status_state *state) {
@@ -138,38 +212,26 @@ static void draw_top(lv_obj_t *widget, lv_color_t cbuf[], const struct status_st
     fill(canvas, LVGL_BACKGROUND);
 
     hazard(canvas, 0);
-    text(canvas, 1, 4, 66, "NERV", &lv_font_montserrat_16, LV_TEXT_ALIGN_LEFT, false);
-    text(canvas, 1, 22, 66, "INTERNAL POWER", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
+    draw_nerv_logo(canvas, 2, 6);
+    pixel_text(canvas, 2, 22, "INTERNAL POWER", 1, false);
 
-    box(canvas, 1, 31, 29, 10, false);
-    box(canvas, 30, 34, 3, 4, true);
-    int fill_w = (state->battery * 25) / 100;
+    outline_box(canvas, 2, 30, 34, 11);
+    solid(canvas, 35, 33, 4, 5, LVGL_FOREGROUND);
+    int fill_w = (state->battery * 30) / 100;
     if (fill_w > 0) {
-        box(canvas, 3, 33, fill_w, 6, true);
+        solid(canvas, 4, 32, fill_w, 7, LVGL_FOREGROUND);
     }
     char pct[8];
     snprintf(pct, sizeof(pct), "%u%%", state->battery);
-    text(canvas, 35, 29, 31, pct, &lv_font_montserrat_14, LV_TEXT_ALIGN_RIGHT, false);
+    pixel_text(canvas, 42, 31, pct, 2, false);
 
     line(canvas, 1, 43, 66, 43, 1);
-    text(canvas, 1, 45, 31, "A.T. LINK", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
-    text(canvas, 33, 45, 33,
-         state->usb_selected ? "UMBILICAL" : (state->connected ? "CONNECTED" : "STANDBY"),
-         &lv_font_unscii_8, LV_TEXT_ALIGN_RIGHT, false);
-
-    text(canvas, 1, 54, 34, "SYNC RATE", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
-    char sync[8];
-    snprintf(sync, sizeof(sync), "%03u", state->wpm);
-    text(canvas, 39, 52, 27, sync, &lv_font_montserrat_14, LV_TEXT_ALIGN_RIGHT, false);
-
-    int max = 1;
-    for (int i = 0; i < 10; i++) {
-        if (wpm_history[i] > max) max = wpm_history[i];
-    }
-    for (int i = 0; i < 10; i++) {
-        int h = 1 + (wpm_history[i] * 6) / max;
-        line(canvas, 2 + i * 6, 67, 2 + i * 6, 67 - h, 2);
-    }
+    pixel_text(canvas, 2, 46, "A.T. LINK", 1, false);
+    draw_bt_icon(canvas);
+    pixel_text(canvas, 15, 56,
+               state->usb_selected ? "UMBILICAL" :
+               (state->connected ? "CONNECTED" : "STANDBY"),
+               1, false);
 
     rotate_canvas(canvas, cbuf);
 }
@@ -178,27 +240,30 @@ static void draw_middle(lv_obj_t *widget, lv_color_t cbuf[], const struct status
     lv_obj_t *canvas = lv_obj_get_child(widget, 1);
     fill(canvas, LVGL_BACKGROUND);
 
-    text(canvas, 1, 0, 66, "MAGI", &lv_font_montserrat_16, LV_TEXT_ALIGN_CENTER, false);
+    pixel_text(canvas, 2, 0, "SYNC RATE", 1, false);
+    int max = 1;
+    for (int i = 0; i < 10; i++) {
+        if (wpm_history[i] > max) max = wpm_history[i];
+    }
+    for (int i = 0; i < 10; i++) {
+        int h = 2 + (wpm_history[i] * 15) / max;
+        line(canvas, 3 + i * 6, 24, 3 + i * 6, 24 - h, 2);
+    }
+    char sync[12];
+    snprintf(sync, sizeof(sync), "%03u WPM", state->wpm);
+    pixel_text(canvas, 35, 26, sync, 1, false);
 
-    const int cx[5] = {10, 34, 58, 22, 46};
-    const int cy[5] = {20, 20, 20, 37, 37};
+    line(canvas, 1, 33, 66, 33, 1);
+    pixel_text5(canvas, 22, 36, "MAGI");
+
     for (int i = 0; i < 5; i++) {
-        bool selected = !state->usb_selected && state->profile_index == i;
-        octagon(canvas, cx[i], cy[i], selected);
-        char n[2] = {(char)('1' + i), '\0'};
-        text(canvas, cx[i] - 4, cy[i] - 5, 8, n, &lv_font_unscii_8,
-             LV_TEXT_ALIGN_CENTER, selected);
+        draw_profile(canvas, 2 + i * 13, 47, i + 1,
+                     !state->usb_selected && state->profile_index == i);
     }
 
-    text(canvas, 1, 45, 66, "PILOT LINK", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
-    text(canvas, 1, 52, 66,
-         state->usb_selected ? "UMBILICAL" : (state->bonded ? "CONNECTED" : "UNPAIRED"),
-         &lv_font_unscii_8, LV_TEXT_ALIGN_RIGHT, false);
-
-    line(canvas, 1, 59, 66, 59, 1);
-    text(canvas, 1, 60, 26, "EVA-01", &lv_font_unscii_8, LV_TEXT_ALIGN_LEFT, false);
-    text(canvas, 27, 60, 39, mode_name(state->layer_index),
-         &lv_font_unscii_8, LV_TEXT_ALIGN_RIGHT, false);
+    line(canvas, 1, 60, 66, 60, 1);
+    pixel_text(canvas, 2, 62, "EVA-01", 1, false);
+    pixel_text(canvas, 31, 62, mode_name(state->layer_index), 1, false);
 
     rotate_canvas(canvas, cbuf);
 }
@@ -209,9 +274,8 @@ static void draw_bottom(lv_obj_t *widget, lv_color_t cbuf[], const struct status
     fill(canvas, LVGL_BACKGROUND);
 
     hazard(canvas, 0);
-    micro_text(canvas, 8, 6, "GOD'S IN HIS");
-    micro_text(canvas, 6, 12, "HEAVEN. ALL'S");
-    micro_text(canvas, 0, 18, "RIGHT WITH WORLD.");
+    pixel_text_ex(canvas, 4, 7, "GOD'S IN HIS HEAVEN.", 1, 3, false);
+    pixel_text_ex(canvas, 1, 14, "ALL'S RIGHT WITH WORLD", 1, 3, false);
 
     rotate_canvas(canvas, cbuf);
 }
@@ -249,7 +313,8 @@ ZMK_SUBSCRIPTION(widget_battery_status, zmk_battery_state_changed);
 ZMK_SUBSCRIPTION(widget_battery_status, zmk_usb_conn_state_changed);
 #endif
 
-static void set_output_status(struct zmk_widget_status *widget, const struct output_status_state *state) {
+static void set_output_status(struct zmk_widget_status *widget,
+                              const struct output_status_state *state) {
     widget->state.usb_selected = state->usb_selected;
     widget->state.profile_index = state->profile_index;
     widget->state.connected = state->connected;
@@ -303,7 +368,7 @@ static void set_wpm_status(struct zmk_widget_status *widget, struct wpm_status_s
     }
     wpm_history[9] = state.wpm;
     widget->state.wpm = state.wpm;
-    draw_top(widget->obj, widget->cbuf, &widget->state);
+    draw_middle(widget->obj, widget->cbuf2, &widget->state);
 }
 static void wpm_status_update_cb(struct wpm_status_state state) {
     struct zmk_widget_status *widget;

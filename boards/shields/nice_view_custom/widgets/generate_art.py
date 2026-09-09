@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Generate 32 LVGL 1-bit Evangelion frames for the nice!view build."""
+"""Generate 32 full-height LVGL 1-bit Evangelion frames for nice!view."""
 from pathlib import Path
 import base64
 import sys
 import zlib
 
-WIDTH = 140
+SRC_WIDTH = 140
 HEIGHT = 68
-ROW_BYTES = 18
-FRAME_BYTES = ROW_BYTES * HEIGHT
+SRC_ROW_BYTES = 18
+SRC_FRAME_BYTES = SRC_ROW_BYTES * HEIGHT
+OUT_WIDTH = 160
+OUT_ROW_BYTES = 20
+OUT_FRAME_BYTES = OUT_ROW_BYTES * HEIGHT
 FRAME_COUNT = 32
 
 PAYLOAD = "".join(
@@ -17,9 +20,14 @@ PAYLOAD = "".join(
 )
 
 
+def get_pixel(raw, frame_idx, x, y):
+    offset = frame_idx * SRC_FRAME_BYTES + y * SRC_ROW_BYTES + (x // 8)
+    mask = 1 << (7 - (x % 8))
+    return 1 if raw[offset] & mask else 0
+
+
 def set_pixel(raw, frame_idx, x, y, value):
-    """Set one pixel in the packed 140x68 1-bit frame payload."""
-    offset = frame_idx * FRAME_BYTES + y * ROW_BYTES + (x // 8)
+    offset = frame_idx * SRC_FRAME_BYTES + y * SRC_ROW_BYTES + (x // 8)
     mask = 1 << (7 - (x % 8))
     if value:
         raw[offset] |= mask
@@ -28,30 +36,31 @@ def set_pixel(raw, frame_idx, x, y, value):
 
 
 def strip_source_frame_labels(raw):
-    """Remove the 25..32 sheet labels without altering the actual artwork.
-
-    The labels for the *next* row of the original sprite sheet bleed into the
-    bottom-left margin of portrait frames 17..24 (x=0..17, y=130..139).
-    Those labels therefore appear at the bottom of those animation frames.
-
-    The payload stored here is already rotated clockwise to 140x68 for the
-    nice!view. That portrait patch maps to x=0..9, y=0..17 in the packed
-    payload. It is a white margin on all eight affected frames, so clear only
-    that tiny region to palette index 0 (white) and leave every other pixel
-    unchanged.
-    """
-    for frame_idx in range(16, 24):  # eva17 .. eva24
+    """Remove the 25..32 sheet-label bleed from eva17..eva24 only."""
+    for frame_idx in range(16, 24):
         for y in range(0, 18):
             for x in range(0, 10):
                 set_pixel(raw, frame_idx, x, y, 0)
 
 
+def stretch_frame(raw, frame_idx):
+    """Expand 140x68 to 160x68 so the mounted portrait view fills 68x160."""
+    out = bytearray(OUT_FRAME_BYTES)
+    for y in range(HEIGHT):
+        for x in range(OUT_WIDTH):
+            src_x = (x * SRC_WIDTH) // OUT_WIDTH
+            if get_pixel(raw, frame_idx, src_x, y):
+                off = y * OUT_ROW_BYTES + (x // 8)
+                out[off] |= 1 << (7 - (x % 8))
+    return out
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: generate_art.py OUTPUT_C")
-    out = Path(sys.argv[1])
+    out_path = Path(sys.argv[1])
     raw = bytearray(zlib.decompress(base64.b85decode(PAYLOAD.encode("ascii"))))
-    expected = FRAME_COUNT * FRAME_BYTES
+    expected = FRAME_COUNT * SRC_FRAME_BYTES
     if len(raw) != expected:
         raise SystemExit(f"bad payload size: {len(raw)} != {expected}")
 
@@ -67,7 +76,7 @@ def main():
     ]
     for idx in range(FRAME_COUNT):
         name = f"eva{idx + 1:02d}"
-        data = raw[idx * FRAME_BYTES:(idx + 1) * FRAME_BYTES]
+        data = stretch_frame(raw, idx)
         lines += [
             f"const LV_ATTRIBUTE_MEM_ALIGN LV_ATTRIBUTE_LARGE_CONST uint8_t {name}_map[] = {{",
             "#if CONFIG_NICE_VIEW_WIDGET_INVERTED",
@@ -78,8 +87,8 @@ def main():
             "    0xff, 0xff, 0xff, 0xff,",
             "#endif",
         ]
-        for off in range(0, len(data), 18):
-            chunk = data[off:off+18]
+        for off in range(0, len(data), OUT_ROW_BYTES):
+            chunk = data[off:off + OUT_ROW_BYTES]
             lines.append("    " + ", ".join(f"0x{b:02x}" for b in chunk) + ",")
         lines += [
             "};",
@@ -88,15 +97,15 @@ def main():
             "    .header.cf = LV_IMG_CF_INDEXED_1BIT,",
             "    .header.always_zero = 0,",
             "    .header.reserved = 0,",
-            f"    .header.w = {WIDTH},",
+            f"    .header.w = {OUT_WIDTH},",
             f"    .header.h = {HEIGHT},",
-            f"    .data_size = {FRAME_BYTES + 8},",
+            f"    .data_size = {OUT_FRAME_BYTES + 8},",
             f"    .data = {name}_map,",
             "};",
             "",
         ]
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(lines))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines))
 
 
 if __name__ == "__main__":

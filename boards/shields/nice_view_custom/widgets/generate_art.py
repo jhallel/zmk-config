@@ -16,14 +16,47 @@ PAYLOAD = "".join(
     for i in range(1, 7)
 )
 
+
+def set_pixel(raw, frame_idx, x, y, value):
+    """Set one pixel in the packed 140x68 1-bit frame payload."""
+    offset = frame_idx * FRAME_BYTES + y * ROW_BYTES + (x // 8)
+    mask = 1 << (7 - (x % 8))
+    if value:
+        raw[offset] |= mask
+    else:
+        raw[offset] &= ~mask
+
+
+def strip_source_frame_labels(raw):
+    """Remove residual source-sheet frame numbers from WARNING frames.
+
+    In the original portrait 68x140 source frames the remaining labels occupy
+    roughly x=0..19, y=130..139. After rotating the frames clockwise for the
+    nice!view payload, that area maps to x=0..9, y=0..19.
+    """
+    # Frames 20-23 have a white margin (0 bit = white in the payload).
+    for frame_idx in range(19, 23):
+        for y in range(0, 20):
+            for x in range(0, 10):
+                set_pixel(raw, frame_idx, x, y, 0)
+
+    # Frame 24 has a black margin (1 bit = black).
+    frame_idx = 23
+    for y in range(0, 20):
+        for x in range(0, 10):
+            set_pixel(raw, frame_idx, x, y, 1)
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: generate_art.py OUTPUT_C")
     out = Path(sys.argv[1])
-    raw = zlib.decompress(base64.b85decode(PAYLOAD.encode("ascii")))
+    raw = bytearray(zlib.decompress(base64.b85decode(PAYLOAD.encode("ascii"))))
     expected = FRAME_COUNT * FRAME_BYTES
     if len(raw) != expected:
         raise SystemExit(f"bad payload size: {len(raw)} != {expected}")
+
+    strip_source_frame_labels(raw)
 
     lines = [
         "#include <lvgl.h>",
@@ -65,6 +98,7 @@ def main():
         ]
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines))
+
 
 if __name__ == "__main__":
     main()

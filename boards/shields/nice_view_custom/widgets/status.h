@@ -3,8 +3,8 @@
 #include <zephyr/kernel.h>
 #include "util.h"
 
-/* ZMK key aliases use single-letter macros such as A, D, E, etc. The
- * NERV footer's tiny bitmap font uses those letters as local glyph names,
+/* ZMK key aliases use short macros such as A, D, E, DOT, etc. The
+ * NERV footer's tiny bitmap font uses those names as local glyph names,
  * so undefine the aliases in this display-only translation unit. */
 #undef A
 #undef D
@@ -20,6 +20,7 @@
 #undef T
 #undef V
 #undef W
+#undef DOT
 
 struct zmk_widget_status {
     sys_snode_t node;

@@ -28,12 +28,7 @@ LV_IMG_DECLARE(nerv_bg_3);
 static sys_slist_t widgets = SYS_SLIST_STATIC_INIT(&widgets);
 static uint8_t wpm_history[10];
 
-struct output_status_state {
-    bool usb_selected;
-    uint8_t profile_index;
-    bool connected;
-    bool bonded;
-};
+struct output_status_state { bool usb_selected; uint8_t profile_index; bool connected; bool bonded; };
 struct layer_status_state { uint8_t index; };
 struct wpm_status_state { uint8_t wpm; };
 
@@ -62,40 +57,46 @@ static void line(lv_obj_t *canvas, int x1, int y1, int x2, int y2, int width) {
     lv_canvas_draw_line(canvas, pts, 2, &d);
 }
 
-static uint16_t glyph3x5(char c) {
+static uint64_t glyph5x7(char c) {
     switch (c) {
-    case ' ': return 0x0000;
-    case 'A': return 0x2bed; case 'B': return 0x6bae; case 'C': return 0x3923;
-    case 'D': return 0x6b6e; case 'E': return 0x79a7; case 'F': return 0x79a4;
-    case 'G': return 0x396b; case 'H': return 0x5bed; case 'I': return 0x7497;
-    case 'J': return 0x126a; case 'K': return 0x5bad; case 'L': return 0x4927;
-    case 'M': return 0x5fed; case 'N': return 0x5ffd; case 'O': return 0x2b6a;
-    case 'P': return 0x6ba4; case 'Q': return 0x2b7b; case 'R': return 0x6bad;
-    case 'S': return 0x388e; case 'T': return 0x7492; case 'U': return 0x5b6f;
-    case 'V': return 0x5b6a; case 'W': return 0x5bfd; case 'X': return 0x5aad;
-    case 'Y': return 0x5a92; case 'Z': return 0x72a7;
-    case '0': return 0x7b6f; case '1': return 0x2c97; case '2': return 0x62a7;
-    case '3': return 0x628e; case '4': return 0x5bc9; case '5': return 0x798e;
-    case '6': return 0x39aa; case '7': return 0x7292; case '8': return 0x2aaa;
-    case '9': return 0x2ace; case '%': return 0x52a5; case '-': return 0x01c0;
-    default: return 0;
+    case ' ': return 0x0ULL;
+    case '%': return 0x6744458c0ULL;
+    case '0': return 0x3a33ae62eULL; case '1': return 0x11842108eULL;
+    case '2': return 0x3a211111fULL; case '3': return 0x78217043eULL;
+    case '4': return 0x08ca97c42ULL; case '5': return 0x7e10f043eULL;
+    case '6': return 0x3a10f462eULL; case '7': return 0x7c2222108ULL;
+    case '8': return 0x3a317462eULL; case '9': return 0x3a317842eULL;
+    case 'A': return 0x3a31fc631ULL; case 'B': return 0x7a31f463eULL;
+    case 'C': return 0x3e108420fULL; case 'D': return 0x7a318c63eULL;
+    case 'E': return 0x7e10f421fULL; case 'I': return 0x7c842109fULL;
+    case 'L': return 0x42108421fULL; case 'M': return 0x4775ac631ULL;
+    case 'N': return 0x47359c631ULL; case 'O': return 0x3a318c62eULL;
+    case 'P': return 0x7a31f4210ULL; case 'R': return 0x7a31f5251ULL;
+    case 'S': return 0x3e107043eULL; case 'T': return 0x7c8421084ULL;
+    case 'U': return 0x46318c62eULL; case 'W': return 0x4631ad6aaULL;
+    case 'Y': return 0x462a21084ULL;
+    default: return 0x0ULL;
     }
 }
 
-static void pixel_text(lv_obj_t *canvas, int x, int y, const char *s, bool inverse) {
+static void pixel_text_adv(lv_obj_t *canvas, int x, int y, const char *s, int advance, bool inverse) {
     lv_color_t color = inverse ? LVGL_BACKGROUND : LVGL_FOREGROUND;
     for (int i = 0; s[i] != '\0'; i++) {
-        uint16_t bits = glyph3x5(s[i]);
-        for (int row = 0; row < 5; row++) {
-            for (int col = 0; col < 3; col++) {
-                int bit = 14 - (row * 3 + col);
-                if ((bits >> bit) & 1U) {
+        uint64_t bits = glyph5x7(s[i]);
+        for (int row = 0; row < 7; row++) {
+            for (int col = 0; col < 5; col++) {
+                int bit = 34 - (row * 5 + col);
+                if ((bits >> bit) & 1ULL) {
                     solid(canvas, x + col, y + row, 1, 1, color);
                 }
             }
         }
-        x += 4;
+        x += advance;
     }
+}
+
+static void pixel_text(lv_obj_t *canvas, int x, int y, const char *s, bool inverse) {
+    pixel_text_adv(canvas, x, y, s, 6, inverse);
 }
 
 static void draw_bg(lv_obj_t *canvas, const lv_img_dsc_t *bg) {
@@ -107,27 +108,37 @@ static void draw_bg(lv_obj_t *canvas, const lv_img_dsc_t *bg) {
     lv_canvas_draw_img(canvas, 0, 0, bg, &img_dsc);
 }
 
-static void profile_fill(lv_obj_t *canvas, int cx, int cy, int n) {
-    solid(canvas, cx - 4, cy - 4, 9, 9, LVGL_FOREGROUND);
+static void draw_profile(lv_obj_t *canvas, int cx, int cy, int n, bool selected) {
+    lv_point_t pts[9] = {
+        {cx - 3, cy - 6}, {cx + 3, cy - 6}, {cx + 6, cy - 3}, {cx + 6, cy + 3},
+        {cx + 3, cy + 6}, {cx - 3, cy + 6}, {cx - 6, cy + 3}, {cx - 6, cy - 3},
+        {cx - 3, cy - 6},
+    };
+    lv_draw_line_dsc_t d;
+    lv_draw_line_dsc_init(&d);
+    d.color = LVGL_FOREGROUND;
+    d.width = 1;
+    lv_canvas_draw_line(canvas, pts, 9, &d);
+    if (selected) {
+        solid(canvas, cx - 4, cy - 4, 9, 9, LVGL_FOREGROUND);
+    }
     char label[2] = {(char)('0' + n), '\0'};
-    pixel_text(canvas, cx - 2, cy - 2, label, true);
+    pixel_text_adv(canvas, cx - 2, cy - 3, label, 5, selected);
 }
 
 static void draw_top(lv_obj_t *widget, lv_color_t cbuf[], const struct status_state *state) {
     lv_obj_t *canvas = lv_obj_get_child(widget, 0);
     draw_bg(canvas, &nerv_bg_1);
 
-    int fill_w = (state->battery * 34) / 100;
-    if (fill_w > 0) {
-        solid(canvas, 4, 36, fill_w, 8, LVGL_FOREGROUND);
-    }
+    int fill_w = (state->battery * 13) / 100;
+    if (fill_w > 0) solid(canvas, 33, 32, fill_w, 8, LVGL_FOREGROUND);
 
     char pct[8];
     snprintf(pct, sizeof(pct), "%u%%", state->battery);
-    pixel_text(canvas, 52, 37, pct, false);
+    pixel_text(canvas, 50, 32, pct, false);
 
-    const char *link = state->usb_selected ? "USB" : (state->connected ? "ONLINE" : "STBY");
-    pixel_text(canvas, 14, 62, link, false);
+    const char *link = state->usb_selected ? "USB" : (state->connected ? "CONNECTED" : "STBY");
+    pixel_text(canvas, 14, 57, link, false);
     rotate_canvas(canvas, cbuf);
 }
 
@@ -136,33 +147,33 @@ static void draw_middle(lv_obj_t *widget, lv_color_t cbuf[], const struct status
     draw_bg(canvas, &nerv_bg_2);
 
     int max = 1;
-    for (int i = 0; i < 10; i++) {
-        if (wpm_history[i] > max) max = wpm_history[i];
-    }
+    for (int i = 0; i < 10; i++) if (wpm_history[i] > max) max = wpm_history[i];
     for (int i = 0; i < 10; i++) {
         int h = 2 + (wpm_history[i] * 17) / max;
-        line(canvas, 3 + i * 4, 26, 3 + i * 4, 26 - h, 2);
+        line(canvas, 2 + i * 4, 25, 2 + i * 4, 25 - h, 2);
     }
 
     char wpm[8];
     snprintf(wpm, sizeof(wpm), "%03u", state->wpm);
-    pixel_text(canvas, 46, 11, wpm, false);
-    pixel_text(canvas, 46, 19, "WPM", false);
+    pixel_text(canvas, 46, 12, wpm, false);
+    pixel_text(canvas, 46, 20, "WPM", false);
 
-    if (!state->usb_selected && state->profile_index < 5) {
-        static const int centers[5] = {7, 20, 33, 46, 59};
-        profile_fill(canvas, centers[state->profile_index], 49, state->profile_index + 1);
+    static const int centers[5] = {7, 20, 33, 46, 59};
+    for (int i = 0; i < 5; i++) {
+        bool selected = !state->usb_selected && state->profile_index == i;
+        draw_profile(canvas, centers[i], 47, i + 1, selected);
     }
 
-    pixel_text(canvas, 40, 61,
-               state->usb_selected ? "USB" : (state->bonded ? "ON" : "WAIT"), false);
+    solid(canvas, 33, 55, 35, 9, LVGL_BACKGROUND);
+    pixel_text(canvas, 32, 56,
+               state->usb_selected ? "USB" : (state->bonded ? "ONLINE" : "WAIT"), false);
     rotate_canvas(canvas, cbuf);
 }
 
 static void draw_bottom(lv_obj_t *widget, lv_color_t cbuf[], const struct status_state *state) {
     lv_obj_t *canvas = lv_obj_get_child(widget, 2);
     draw_bg(canvas, &nerv_bg_3);
-    pixel_text(canvas, 34, 15, mode_name(state->layer_index), false);
+    pixel_text_adv(canvas, 36, 13, mode_name(state->layer_index), 5, false);
     rotate_canvas(canvas, cbuf);
 }
 
@@ -192,15 +203,13 @@ static struct battery_status_state battery_status_get_state(const zmk_event_t *e
 #endif
     };
 }
-ZMK_DISPLAY_WIDGET_LISTENER(widget_battery_status, struct battery_status_state,
-                            battery_status_update_cb, battery_status_get_state)
+ZMK_DISPLAY_WIDGET_LISTENER(widget_battery_status, struct battery_status_state, battery_status_update_cb, battery_status_get_state)
 ZMK_SUBSCRIPTION(widget_battery_status, zmk_battery_state_changed);
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
 ZMK_SUBSCRIPTION(widget_battery_status, zmk_usb_conn_state_changed);
 #endif
 
-static void set_output_status(struct zmk_widget_status *widget,
-                              const struct output_status_state *state) {
+static void set_output_status(struct zmk_widget_status *widget, const struct output_status_state *state) {
     widget->state.usb_selected = state->usb_selected;
     widget->state.profile_index = state->profile_index;
     widget->state.connected = state->connected;
@@ -222,8 +231,7 @@ static struct output_status_state output_status_get_state(const zmk_event_t *eh)
         .bonded = !zmk_ble_active_profile_is_open(),
     };
 }
-ZMK_DISPLAY_WIDGET_LISTENER(widget_output_status, struct output_status_state,
-                            output_status_update_cb, output_status_get_state)
+ZMK_DISPLAY_WIDGET_LISTENER(widget_output_status, struct output_status_state, output_status_update_cb, output_status_get_state)
 ZMK_SUBSCRIPTION(widget_output_status, zmk_endpoint_changed);
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
 ZMK_SUBSCRIPTION(widget_output_status, zmk_usb_conn_state_changed);
@@ -244,8 +252,7 @@ static struct layer_status_state layer_status_get_state(const zmk_event_t *eh) {
     ARG_UNUSED(eh);
     return (struct layer_status_state){.index = zmk_keymap_highest_layer_active()};
 }
-ZMK_DISPLAY_WIDGET_LISTENER(widget_layer_status, struct layer_status_state,
-                            layer_status_update_cb, layer_status_get_state)
+ZMK_DISPLAY_WIDGET_LISTENER(widget_layer_status, struct layer_status_state, layer_status_update_cb, layer_status_get_state)
 ZMK_SUBSCRIPTION(widget_layer_status, zmk_layer_state_changed);
 
 static void set_wpm_status(struct zmk_widget_status *widget, struct wpm_status_state state) {
@@ -262,8 +269,7 @@ static struct wpm_status_state wpm_status_get_state(const zmk_event_t *eh) {
     ARG_UNUSED(eh);
     return (struct wpm_status_state){.wpm = zmk_wpm_get_state()};
 }
-ZMK_DISPLAY_WIDGET_LISTENER(widget_wpm_status, struct wpm_status_state,
-                            wpm_status_update_cb, wpm_status_get_state)
+ZMK_DISPLAY_WIDGET_LISTENER(widget_wpm_status, struct wpm_status_state, wpm_status_update_cb, wpm_status_get_state)
 ZMK_SUBSCRIPTION(widget_wpm_status, zmk_wpm_state_changed);
 
 int zmk_widget_status_init(struct zmk_widget_status *widget, lv_obj_t *parent) {

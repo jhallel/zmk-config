@@ -1,8 +1,17 @@
 #pragma once
 #include <lvgl.h>
 #define CANVAS_SIZE 68
+
+/* The central/left display is intentionally inverted for the NERV terminal:
+ * black background with white UI. The peripheral/right display keeps the
+ * existing palette rules so the EVA animation remains unchanged. */
+#if !IS_ENABLED(CONFIG_ZMK_SPLIT) || IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+#define LVGL_BACKGROUND lv_color_black()
+#define LVGL_FOREGROUND lv_color_white()
+#else
 #define LVGL_BACKGROUND (IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_INVERTED) ? lv_color_black() : lv_color_white())
 #define LVGL_FOREGROUND (IS_ENABLED(CONFIG_NICE_VIEW_WIDGET_INVERTED) ? lv_color_white() : lv_color_black())
+#endif
 
 struct status_state {
     uint8_t battery;
